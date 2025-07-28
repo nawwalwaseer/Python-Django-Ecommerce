@@ -2,9 +2,9 @@ name: Django Tests
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
 
 jobs:
   test:
@@ -14,22 +14,14 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_DATABASE: test_db
-          MYSQL_USER: test_user
-          MYSQL_PASSWORD: test_pass
-          MYSQL_ROOT_PASSWORD: rootpass
+          MYSQL_ROOT_PASSWORD: root
         ports:
           - 3306:3306
-        options: --health-cmd="mysqladmin ping --silent" --health-interval=10s --health-timeout=5s --health-retries=3
-
-    env:
-      DB_NAME: test_db
-      DB_USER: test_user
-      DB_PASSWORD: test_pass
-      DB_HOST: 127.0.0.1
-      DB_PORT: 3306
-      SECRET_KEY: testsecretkey
-      DEBUG: '1'
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     steps:
     - name: Checkout code
@@ -38,34 +30,31 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: 3.11
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Wait for MySQL to be ready
-      run: |
-        echo "Waiting for MySQL..."
-        while ! mysqladmin ping -h 127.0.0.1 --silent; do
-          sleep 1
-        done
+    - name: Wait for MySQL
+      run: sleep 20
 
-    - name: Create .env file for decouple
+    - name: Setup database
       run: |
-        echo DB_NAME=$DB_NAME >> .env
-        echo DB_USER=$DB_USER >> .env
-        echo DB_PASSWORD=$DB_PASSWORD >> .env
-        echo DB_HOST=$DB_HOST >> .env
-        echo DB_PORT=$DB_PORT >> .env
-        echo SECRET_KEY=$SECRET_KEY >> .env
-        echo DEBUG=$DEBUG >> .env
+        sudo apt-get install -y mysql-client
+        mysql -h 127.0.0.1 -u root -proot -e "CREATE DATABASE test_db;"
+        mysql -h 127.0.0.1 -u root -proot -e "CREATE USER 'test_user'@'%' IDENTIFIED BY 'test_pass';"
+        mysql -h 127.0.0.1 -u root -proot -e "GRANT ALL PRIVILEGES ON test_db.* TO 'test_user'@'%';"
+        mysql -h 127.0.0.1 -u root -proot -e "FLUSH PRIVILEGES;"
 
-    - name: Run migrations
-      run: |
-        python manage.py migrate
-
-    - name: Run tests
-      run: |
-        python manage.py test playground.tests
+    - name: Run Django tests
+      env:
+        DB_NAME: test_db
+        DB_USER: test_user
+        DB_PASSWORD: test_pass
+        DB_HOST: 127.0.0.1
+        DB_PORT: 3306
+        SECRET_KEY: testsecretkey
+        DEBUG: 1
+      run: python manage.py test playground.tests
